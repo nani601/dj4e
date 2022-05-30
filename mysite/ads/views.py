@@ -8,6 +8,7 @@ from django.urls import reverse_lazy, reverse
 from django.http import HttpResponse
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .forms import CreateForm, CommentForm
+from django.db.models import Q
 
 
 class AdListView(OwnerListView):
@@ -16,14 +17,25 @@ class AdListView(OwnerListView):
     template_name = "ads/ad_list.html"
 
     def get(self, request):
-        ad_list = Ad.objects.all()
+        strval = request.GET.get("search", False)
+        if strval:
+            # Simple title-only search
+            # objects = Post.objects.filter(title__contains=strval).select_related().order_by('-updated_at')[:10]
+
+            # Multi-field search
+            # __icontains for case-insensitive search
+            query = Q(title__icontains=strval)
+            query.add(Q(text__icontains=strval), Q.OR)
+            ad_list = Ad.objects.filter(query).select_related()
+        else:
+            ad_list = Ad.objects.all()
         favorites = list()
         if request.user.is_authenticated:
             # rows = [{'id': 2}, {'id': 4} ... ]  (A list of rows)
             rows = request.user.favorite_ads.values('id')
             # favorites = [2, 4, ...] using list comprehension
             favorites = [row['id'] for row in rows]
-        ctx = {'ad_list': ad_list, 'favorites': favorites}
+        ctx = {'ad_list': ad_list, 'favorites': favorites, 'search': strval}
         return render(request, self.template_name, ctx)
 
 
@@ -44,7 +56,7 @@ class AdCreateView(LoginRequiredMixin, View):
     template_name = 'ads/ad_form.html'
     success_url = reverse_lazy('ads:all')
     # List the fields to copy from the Ad model to the Ad form
-    fields = ['title', 'text', 'price']
+    fields = ['title', 'text', 'price', 'tags']
 
     def get(self, request, pk=None):
         form = CreateForm()
@@ -62,6 +74,10 @@ class AdCreateView(LoginRequiredMixin, View):
         obj = form.save(commit=False)
         obj.owner = self.request.user
         obj.save()
+        # https://django-taggit.readthedocs.io/en/latest/forms.html#commit-false
+        # https://docs.djangoproject.com/zh-hans/3.2/topics/forms/modelforms/
+        # 另一个使用 commit=False 的作用，您可以在模型与另一个模型有多对多关系的时候看到。如果您的模型具有多对多关系，并且在保存表单时指定了 commit=False ，Django无法立即保存多对多关系的表单数据。这是因为实例的多对多数据只有实例在数据库中存在时才能保存。
+        form.save_m2m()  # Add this
         return redirect(self.success_url)
 
 
@@ -69,7 +85,7 @@ class AdUpdateView(LoginRequiredMixin, View):
     model = Ad
     template_name = 'ads/ad_form.html'
     success_url = reverse_lazy('ads:all')
-    fields = ['title', 'text', 'price']
+    fields = ['title', 'text', 'price', 'tags']
 
     # This would make more sense
     # fields_exclude = ['owner', 'created_at', 'updated_at']
@@ -90,6 +106,10 @@ class AdUpdateView(LoginRequiredMixin, View):
 
         ad = form.save(commit=False)
         ad.save()
+        # https://django-taggit.readthedocs.io/en/latest/forms.html#commit-false
+        # https://docs.djangoproject.com/zh-hans/3.2/topics/forms/modelforms/
+        # 另一个使用 commit=False 的作用，您可以在模型与另一个模型有多对多关系的时候看到。如果您的模型具有多对多关系，并且在保存表单时指定了 commit=False ，Django无法立即保存多对多关系的表单数据。这是因为实例的多对多数据只有实例在数据库中存在时才能保存。
+        form.save_m2m()  # Add this
 
         return redirect(self.success_url)
 
